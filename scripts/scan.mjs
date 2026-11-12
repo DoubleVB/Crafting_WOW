@@ -56,9 +56,10 @@ async function fetchHouse(id) {
   for (const r of routes) {
     try {
       const h = await api(r);
-      let all = [...(h.auctions || []), ...(h.commodities || [])];
+      const arr = x => (Array.isArray(x) ? x : []);
+      let all = [...arr(h.auctions), ...arr(h.commodities)];
       if (r === routes[0] && !Array.isArray(h.commodities)) {
-        try { const c = await api(`${r}/commodities`); if (Array.isArray(c.auctions)) all = all.concat(c.auctions); }
+        try { const c = await api(`${r}/commodities`); all = all.concat(arr(c.auctions)); }
         catch (e) { if (e.status !== 404) throw e; }
       }
       if (all.length) { console.log(`✔ HV #${id} : ${all.length} enchères (${r})`); return all; }
