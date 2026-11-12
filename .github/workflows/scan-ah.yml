@@ -1,0 +1,56 @@
+name: Scan hôtel des ventes
+
+on:
+  schedule:
+    - cron: "17 * * * *" # toutes les heures (UTC)
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: scan-ah
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Préparer la branche data
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git ls-remote --exit-code --heads origin data >/dev/null; then
+            git fetch --depth=1 origin data
+            git worktree add -B data data-branch origin/data
+          else
+            git worktree add --orphan -b data data-branch
+          fi
+
+      - name: Scanner l'hôtel des ventes
+        env:
+          BLIZZARD_CLIENT_ID: ${{ secrets.BLIZZARD_CLIENT_ID }}
+          BLIZZARD_CLIENT_SECRET: ${{ secrets.BLIZZARD_CLIENT_SECRET }}
+          REGION: ${{ vars.REGION }}
+          NAMESPACE: ${{ vars.NAMESPACE }}
+          RULESET: ${{ vars.RULESET }}
+          AH_IDS: ${{ vars.AH_IDS }}
+          KEEP_HOURS: ${{ vars.KEEP_HOURS }}
+        run: node scripts/scan.mjs data-branch
+
+      - name: Publier sur la branche data
+        working-directory: data-branch
+        run: |
+          git add -A
+          if git diff --cached --quiet; then echo "Rien de nouveau."; exit 0; fi
+          # Un seul commit sur la branche data : l'historique est déjà dans snaps.json, le dépôt ne grossit pas
+          git checkout -q --orphan scan-tmp
+          git commit -q -m "Scan HV $(date -u +'%Y-%m-%d %H:%M') UTC"
+          git push -f origin scan-tmp:data
